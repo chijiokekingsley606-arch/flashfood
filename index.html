@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlashFood - Trusted PH Marketplace</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;font-family:system-ui}body{margin:0;background:#f0fdf4}
+header{background:#0f172a;color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:900;font-size:22px}.logo span{color:#22c55e}
+.container{max-width:1100px;margin:auto;padding:14px}
+.card{background:white;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,.07)}
+input,select{width:100%;padding:12px;border:1px solid #e2e8f0;border-radius:10px;margin:6px 0 10px;font-size:15px}
+button{padding:12px 16px;border:none;border-radius:10px;font-weight:700;cursor:pointer;background:#0f172a;color:white;width:100%;margin-top:6px}
+button.green{background:#22c55e}button.blue{background:#0ea5e9}button.outline{background:white;color:#0f172a;border:2px solid #0f172a}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px} @media(max-width:700px){.grid{grid-template-columns:1fr}}
+.meal{border:2px solid #e2e8f0;border-radius:14px;padding:12px;position:relative}
+.price{color:#22c55e;font-weight:900;font-size:20px}
+.badge{background:#dcfce7;color:#166534;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.icons{display:flex;gap:8px;margin:8px 0} .icons a{text-decoration:none;font-size:20px;background:#f1f5f9;padding:6px 10px;border-radius:8px}
+.small{font-size:12px;color:#64748b}
+.hidden{display:none} .track{height:8px;background:#e2e8f0;border-radius:10px;overflow:hidden;margin:8px 0} .track div{height:100%;background:#22c55e;width:0%;transition:2s}
+.otp-box{background:#fef9c3;border:2px dashed #facc15;padding:10px;border-radius:10px;margin-top:8px}
+</style>
+</head>
+<body>
+<header><div class="logo">Flash<span>Food</span> Trusted</div><select id="role" onchange="switchRole()" style="width:auto;margin:0;padding:8px"><option value="buyer">BUYER DASHBOARD</option><option value="company">COMPANY LOGIN</option></select></header>
+
+<div class="container">
+
+<!-- BUYER VIEW -->
+<div id="buyer-view">
+<div class="card" style="background:#22c55e;color:white;text-align:center"><h2 style="margin:0">Buyer Dashboard</h2><p style="margin:4px 0">See verified meals, chat, video call hotel to avoid scam</p></div>
+<div id="buyer-meals" class="grid"></div>
+</div>
+
+<!-- COMPANY VIEW -->
+<div id="company-view" class="hidden">
+<div class="card"><h2>Company / Hotel Login</h2>
+<input id="c_email" placeholder="Hotel Email (login)">
+<input id="c_name" placeholder="Hotel Name">
+<input id="c_account" placeholder="Account Number for Buyers (e.g 0123456789 - GTB)">
+<input id="c_whatsapp" placeholder="WhatsApp Number (e.g 0803...)">
+<input id="c_video" placeholder="Video Call Link (Google Meet link)">
+<button class="green" onclick="companyLogin()">Login as Company</button>
+<p id="c_status" class="small"></p></div>
+
+<div id="c_dashboard" class="hidden">
+<div class="card"><h3>Post New Surplus Meal</h3>
+<input id="m_name" placeholder="Food Name e.g Jollof + Chicken">
+<input id="m_price" type="number" placeholder="Price e.g 1500">
+<input id="m_qty" type="number" placeholder="Qty">
+<input id="m_location" placeholder="Location GRA">
+<input id="m_expiry" placeholder="Pickup Time 6-8pm">
+<button class="green" onclick="postMeal()">Post to Buyer Menu</button>
+<p id="postStatus" class="small"></p></div>
+
+<div class="card"><h3>My Posted Meals — Waiting for Buyer Payment</h3><div id="company-meals"></div></div>
+
+<div class="card"><h3>Verify Buyer Payment — Send OTP</h3>
+<input id="verify_email" placeholder="Buyer Email who paid">
+<input id="otp_to_send" placeholder="Create OTP e.g 1234">
+<button class="blue" onclick="sendOTP()">Send OTP to Buyer</button><p id="otpStatus" class="small"></p></div>
+</div>
+</div>
+
+</div>
+
+<script>
+const SUPABASE_URL="https://xjiutjktiyketsoez.supabase.co";
+const SUPABASE_KEY="sb_publishable_AQtHqJMmFimeQR4PWTu5PA_lKbJrDEu";
+const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let currentCompany=JSON.parse(localStorage.getItem('ff_company')||'null');
+
+function switchRole(){
+ const r=document.getElementById('role').value;
+ document.getElementById('buyer-view').classList.toggle('hidden',r!=='buyer');
+ document.getElementById('company-view').classList.toggle('hidden',r!=='company');
+ if(r==='buyer') loadMeals();
+ if(r==='company' && currentCompany) showCompanyDash();
+}
+
+function companyLogin(){
+ const email=document.getElementById('c_email').value;
+ if(!email){alert('Enter email');return}
+ currentCompany={email:email,name:document.getElementById('c_name').value,account:document.getElementById('c_account').value,whatsapp:document.getElementById('c_whatsapp').value,video:document.getElementById('c_video').value||'https://meet.google.com'};
+ localStorage.setItem('ff_company',JSON.stringify(currentCompany));
+ document.getElementById('c_status').textContent='Logged in as '+email;
+ showCompanyDash();
+}
+function showCompanyDash(){
+ document.getElementById('c_dashboard').classList.remove('hidden');
+ loadCompanyMeals();
+}
+async function postMeal(){
+ const data={
+  restaurant_email:currentCompany.email,
+  name:document.getElementById('m_name').value,
+  price:parseInt(document.getElementById('m_price').value),
+  qty:parseInt(document.getElementById('m_qty').value),
+  location:document.getElementById('m_location').value,
+  expiry:document.getElementById('m_expiry').value,
+  is_available:true
+ };
+ if(!data.name||!data.price){alert('Fill');return}
+ const {error}=await supabaseClient.from('meals').insert([data]);
+ document.getElementById('postStatus').textContent=error?error.message:'✅ Posted to buyer menu!';
+ loadMeals(); loadCompanyMeals();
+}
+async function loadMeals(){
+ const c=document.getElementById('buyer-meals');c.innerHTML='Loading trusted meals...';
+ const {data}=await supabaseClient.from('meals').select('*').order('created_at',{ascending:false});
+ if(!data||!data.length){c.innerHTML='No meals yet.';return}
+ c.innerHTML=''; data.forEach(m=>{
+  const div=document.createElement('div');div.className='meal';
+  const companyInfo=JSON.parse(localStorage.getItem('ff_company')||'{}');
+  const acct=currentCompany?currentCompany.account:'Contact hotel for account';
+  const wa=currentCompany?currentCompany.whatsapp:'08000000000';
+  const vid=currentCompany?currentCompany.video:'https://meet.google.com';
+  div.innerHTML=`
+  <span class="badge">${m.qty} left • VERIFIED</span>
+  <h3>${m.name}</h3><div class="price">₦${m.price}</div>
+  <div class="small">${m.location} • ${m.expiry}</div>
+  <div class="small" style="margin-top:6px">Hotel: ${m.restaurant_email}</div>
+  <div style="background:#f8fafc;padding:8px;border-radius:8px;margin:6px 0"><b>Account No:</b> ${acct}<br><small>Pay then click "I have made transfer"</small></div>
+  <div class="icons">
+    <a href="mailto:${m.restaurant_email}" title="Email">✉️ Email</a>
+    <a href="https://wa.me/${wa.replace(/[^0-9]/g,'')}" target="_blank" title="WhatsApp">💬 WhatsApp</a>
+    <a href="${vid}" target="_blank" title="Video Call">📹 Video</a>
+  </div>
+  <button class="blue" onclick="paid('${m.id}','${m.restaurant_email}')">I have made the transfer</button>
+  <div id="otp-area-${m.id}" class="hidden otp-box">
+    <p class="small">Hotel will send you OTP after checking payment. Enter OTP:</p>
+    <input id="otp-input-${m.id}" placeholder="Enter OTP">
+    <button class="green" onclick="checkOTP('${m.id}')">Verify OTP — Success</button>
+    <div id="track-${m.id}" class="hidden">
+      <p><b>✅ Payment Verified! Tracking delivery...</b></p>
+      <div class="track"><div id="bar-${m.id}"></div></div>
+      <p class="small" id="track-text-${m.id}">Preparing food...</p>
+    </div>
+  </div>
+  `;
+  c.appendChild(div);
+ });
+}
+function paid(id,email){
+ document.getElementById(`otp-area-${id}`).classList.remove('hidden');
+ alert(`You clicked "I have made transfer" for ${email}. Hotel will check and send OTP.`);
+}
+function checkOTP(id){
+ const entered=document.getElementById(`otp-input-${id}`).value;
+ const realOTP=localStorage.getItem('ff_otp_'+id) || localStorage.getItem('ff_last_otp') || '1234';
+ if(entered===realOTP || entered==='1234'){
+  const track=document.getElementById(`track-${id}`); track.classList.remove('hidden');
+  const bar=document.getElementById(`bar-${id}`); const txt=document.getElementById(`track-text-${id}`);
+  bar.style.width='30%'; txt.textContent='Rider picked up...';
+  setTimeout(()=>{bar.style.width='70%';txt.textContent='On the way to your location...';},2000);
+  setTimeout(()=>{bar.style.width='100%';txt.textContent='✅ Delivered! Enjoy!';},4000);
+ } else { alert('Wrong OTP. Ask hotel for correct OTP. For test use 1234'); }
+}
+async function loadCompanyMeals(){
+ if(!currentCompany) return;
+ const c=document.getElementById('company-meals');c.innerHTML='Loading...';
+ const {data}=await supabaseClient.from('meals').select('*').eq('restaurant_email',currentCompany.email);
+ c.innerHTML=data.map(m=>`<div class="small">🍛 ${m.name} - ₦${m.price} - ${m.qty} left</div>`).join('');
+}
+function sendOTP(){
+ const email=document.getElementById('verify_email').value;
+ const otp=document.getElementById('otp_to_send').value||'1234';
+ localStorage.setItem('ff_last_otp',otp);
+ // store per meal would need meal id, for demo we use global
+ const buyerMeals=document.getElementById('buyer-meals');
+ // find last paid meal
+ const allIds=document.querySelectorAll('[id^="otp-area-"]');
+ if(allIds.length>0){
+   const lastId=allIds[allIds.length-1].id.replace('otp-area-','');
+   localStorage.setItem('ff_otp_'+lastId,otp);
+ }
+ document.getElementById('otpStatus').textContent=`✅ OTP ${otp} sent to buyer ${email} (demo). Tell buyer to enter ${otp}`;
+}
+switchRole(); loadMeals();
+</script>
+</body>
+</html>
